@@ -1,0 +1,399 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>LAN Chat</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            background: #eef2f7;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .chat-container {
+            width: 420px;
+            height: 650px;
+            background: white;
+            border-radius: 18px;
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+
+        .header {
+            background: #2563eb;
+            color: white;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo {
+            width: 45px;
+            height: 45px;
+            background: white;
+            color: #2563eb;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 22px;
+        }
+
+        .header h2 {
+            font-size: 20px;
+        }
+
+        .status {
+            font-size: 12px;
+            margin-top: 3px;
+            color: #dbeafe;
+        }
+
+        /* Username */
+
+        .user-section {
+            padding: 15px 18px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .user-section input {
+            width: 100%;
+            padding: 11px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            outline: none;
+        }
+
+        .user-section input:focus {
+            border-color: #2563eb;
+        }
+
+        /* Messages */
+
+        #chat {
+            flex: 1;
+            padding: 18px;
+            overflow-y: auto;
+            background: #f8fafc;
+        }
+
+        .message {
+            margin-bottom: 14px;
+        }
+
+        .message-name {
+            font-size: 12px;
+            font-weight: bold;
+            color: #2563eb;
+            margin-bottom: 4px;
+        }
+
+        .message-text {
+            display: inline-block;
+            background: white;
+            padding: 10px 14px;
+            border-radius: 12px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.06);
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+
+        /* Input */
+
+        .input-section {
+            padding: 15px;
+            display: flex;
+            gap: 10px;
+            border-top: 1px solid #eee;
+            background: white;
+        }
+
+        .input-section input {
+            flex: 1;
+            padding: 12px 14px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            outline: none;
+            font-size: 14px;
+        }
+
+        .input-section input:focus {
+            border-color: #2563eb;
+        }
+
+        .send-button {
+            border: none;
+            background: #2563eb;
+            color: white;
+            padding: 0 18px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .send-button:hover {
+            background: #1d4ed8;
+        }
+
+        .send-button:active {
+            transform: scale(0.96);
+        }
+
+        /* Scrollbar */
+
+        #chat::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        #chat::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="chat-container">
+
+        <!-- Header -->
+
+        <div class="header">
+
+            <div class="logo">
+                💬
+            </div>
+
+            <div>
+                <h2>LAN Chat</h2>
+                <div class="status" id="status">
+                    Connecting...
+                </div>
+            </div>
+
+        </div>
+
+
+        <!-- Username -->
+
+        <div class="user-section">
+
+            <input
+                type="text"
+                id="name"
+                placeholder="Enter your name"
+            >
+
+        </div>
+
+
+        <!-- Messages -->
+
+        <div id="chat">
+
+            <div style="text-align:center; color:#94a3b8;">
+                Messages will appear here
+            </div>
+
+        </div>
+
+
+        <!-- Message Input -->
+
+        <div class="input-section">
+
+            <input
+                type="text"
+                id="message"
+                placeholder="Type a message..."
+                onkeydown="handleEnter(event)"
+            >
+
+            <button
+                class="send-button"
+                onclick="sendMessage()"
+            >
+                Send
+            </button>
+
+        </div>
+
+    </div>
+
+
+    <script>
+
+        // Connect to Spring Boot WebSocket
+
+        let socket = new SockJS("http://localhost:8080/chat");
+
+        let stompClient = Stomp.over(socket);
+
+        stompClient.connect({}, function () {
+
+            console.log("Connected!");
+
+            document.getElementById("status").innerText =
+                "● Connected";
+
+            // Subscribe to messages
+
+            stompClient.subscribe(
+                "/topic/messages",
+                function (response) {
+
+                    let message =
+                        JSON.parse(response.body);
+
+                    displayMessage(
+                        message.sender,
+                        message.content
+                    );
+                }
+            );
+
+        }, function () {
+
+            document.getElementById("status").innerText =
+                "● Disconnected";
+
+        });
+
+
+        // Send message
+
+        function sendMessage() {
+
+            let name =
+                document.getElementById("name").value.trim();
+
+            let message =
+                document.getElementById("message").value.trim();
+
+
+            if (name === "") {
+
+                alert("Please enter your name");
+
+                return;
+            }
+
+
+            if (message === "") {
+
+                return;
+            }
+
+
+            stompClient.send(
+                "/app/send",
+                {},
+                JSON.stringify({
+
+                    sender: name,
+
+                    content: message
+
+                })
+            );
+
+
+            document.getElementById("message").value = "";
+
+            document.getElementById("message").focus();
+        }
+
+
+        // Display message
+
+        function displayMessage(sender, content) {
+
+            let chat =
+                document.getElementById("chat");
+
+
+            // Remove placeholder
+
+            if (chat.innerText ===
+                "Messages will appear here") {
+
+                chat.innerHTML = "";
+
+            }
+
+
+            let messageDiv =
+                document.createElement("div");
+
+            messageDiv.className = "message";
+
+
+            let nameDiv =
+                document.createElement("div");
+
+            nameDiv.className = "message-name";
+
+            nameDiv.innerText = sender;
+
+
+            let textDiv =
+                document.createElement("div");
+
+            textDiv.className = "message-text";
+
+            textDiv.innerText = content;
+
+
+            messageDiv.appendChild(nameDiv);
+
+            messageDiv.appendChild(textDiv);
+
+
+            chat.appendChild(messageDiv);
+
+
+            // Automatically scroll down
+
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+
+        // Send message using Enter
+
+        function handleEnter(event) {
+
+            if (event.key === "Enter") {
+
+                sendMessage();
+
+            }
+
+        }
+
+    </script>
+
+</body>
+
+</html>
